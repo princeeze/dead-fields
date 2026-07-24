@@ -1,0 +1,19 @@
+{
+  "deadProperties": [
+    {
+      "file": "index.ts",
+      "objectName": "multiFirst",
+      "propertyName": "b"
+    },
+    {
+      "file": "index.ts",
+      "objectName": "multiSecond",
+      "propertyName": "y"
+    },
+    {
+      "file": "index.ts",
+      "objectName": "multiSecond",
+      "propertyName": "z"
+    }
+  ]
+}

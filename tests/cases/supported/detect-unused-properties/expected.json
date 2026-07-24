@@ -1,0 +1,14 @@
+{
+  "deadProperties": [
+    {
+      "file": "index.ts",
+      "objectName": "dbConfig",
+      "propertyName": "port"
+    },
+    {
+      "file": "index.ts",
+      "objectName": "dbConfig",
+      "propertyName": "ssl"
+    }
+  ]
+}

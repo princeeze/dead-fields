@@ -1,0 +1,14 @@
+{
+  "deadProperties": [
+    {
+      "file": "index.ts",
+      "objectName": "spreadBase",
+      "propertyName": "a"
+    },
+    {
+      "file": "index.ts",
+      "objectName": "spreadBase",
+      "propertyName": "b"
+    }
+  ]
+}

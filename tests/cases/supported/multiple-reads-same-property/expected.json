@@ -1,0 +1,9 @@
+{
+  "deadProperties": [
+    {
+      "file": "index.ts",
+      "objectName": "repeatRead",
+      "propertyName": "unused"
+    }
+  ]
+}

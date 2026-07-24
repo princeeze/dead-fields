@@ -1,0 +1,38 @@
+{
+  "name": "dead-fields",
+  "version": "0.1.0",
+  "description": "Static analysis for detecting unread object literal properties in TypeScript",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:fixtures:update": "UPDATE_FIXTURES=1 vitest run tests/fixtures.test.ts"
+  },
+  "keywords": [
+    "typescript",
+    "static-analysis",
+    "unused-properties"
+  ],
+  "license": "MIT",
+  "packageManager": "pnpm@10.12.1",
+  "devDependencies": {
+    "@types/node": "^22.15.21",
+    "typescript": "^5.8.3",
+    "vitest": "^3.1.4"
+  },
+  "dependencies": {
+    "ts-morph": "^25.0.1"
+  }
+}

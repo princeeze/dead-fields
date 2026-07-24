@@ -1,0 +1,9 @@
+{
+  "deadProperties": [
+    {
+      "file": "index.ts",
+      "objectName": "nestedOuter.inner",
+      "propertyName": "unused"
+    }
+  ]
+}

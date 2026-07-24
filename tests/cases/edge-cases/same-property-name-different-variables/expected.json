@@ -1,0 +1,19 @@
+{
+  "deadProperties": [
+    {
+      "file": "index.ts",
+      "objectName": "scopeFirst",
+      "propertyName": "b"
+    },
+    {
+      "file": "index.ts",
+      "objectName": "scopeSecond",
+      "propertyName": "a"
+    },
+    {
+      "file": "index.ts",
+      "objectName": "scopeSecond",
+      "propertyName": "c"
+    }
+  ]
+}

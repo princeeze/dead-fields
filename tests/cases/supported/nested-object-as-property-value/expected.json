@@ -1,0 +1,14 @@
+{
+  "deadProperties": [
+    {
+      "file": "index.ts",
+      "objectName": "wrapperOuter",
+      "propertyName": "b"
+    },
+    {
+      "file": "index.ts",
+      "objectName": "wrapperOuter.a",
+      "propertyName": "nested"
+    }
+  ]
+}

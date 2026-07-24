@@ -1,0 +1,14 @@
+{
+  "deadProperties": [
+    {
+      "file": "index.ts",
+      "objectName": "flowSource",
+      "propertyName": "a"
+    },
+    {
+      "file": "index.ts",
+      "objectName": "flowSource",
+      "propertyName": "b"
+    }
+  ]
+}
