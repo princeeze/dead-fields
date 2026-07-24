@@ -1,11 +1,11 @@
 import {
   Node,
-  Project,
-  ScriptTarget,
-  SyntaxKind,
   type ObjectLiteralExpression,
+  Project,
   type PropertyAssignment,
+  ScriptTarget,
   type ShorthandPropertyAssignment,
+  SyntaxKind,
 } from "ts-morph";
 import { JsxEmit } from "typescript";
 import type { AnalysisResult, AnalyzeOptions, DeadProperty } from "./types.js";
@@ -58,7 +58,9 @@ export function analyzeSource(
   return { deadProperties };
 }
 
-function collectObjectLiterals(sourceFile: import("ts-morph").SourceFile): TrackedObject[] {
+function collectObjectLiterals(
+  sourceFile: import("ts-morph").SourceFile,
+): TrackedObject[] {
   const results: TrackedObject[] = [];
 
   for (const declaration of sourceFile.getVariableDeclarations()) {
@@ -143,7 +145,10 @@ function extractPropertyNames(
 function getPropertyName(
   property: import("ts-morph").ObjectLiteralElementLike,
 ): string | undefined {
-  if (Node.isPropertyAssignment(property) || Node.isShorthandPropertyAssignment(property)) {
+  if (
+    Node.isPropertyAssignment(property) ||
+    Node.isShorthandPropertyAssignment(property)
+  ) {
     return getPropertyAssignmentName(property);
   }
   return undefined;

@@ -58,7 +58,10 @@ export function loadExpected(caseDir: string): FixtureExpected {
   return JSON.parse(readFileSync(expectedPath, "utf8")) as FixtureExpected;
 }
 
-export function writeExpected(caseDir: string, expected: FixtureExpected): void {
+export function writeExpected(
+  caseDir: string,
+  expected: FixtureExpected,
+): void {
   const expectedPath = join(caseDir, "expected.json");
   writeFileSync(expectedPath, `${JSON.stringify(expected, null, 2)}\n`);
 }

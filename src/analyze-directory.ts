@@ -5,7 +5,9 @@ import type { AnalysisResult } from "./types.js";
 
 const SOURCE_EXTENSIONS = new Set([".ts", ".tsx"]);
 
-export async function analyzeDirectory(dirPath: string): Promise<AnalysisResult> {
+export async function analyzeDirectory(
+  dirPath: string,
+): Promise<AnalysisResult> {
   const files = await collectSourceFiles(dirPath);
   const deadProperties: AnalysisResult["deadProperties"] = [];
 
