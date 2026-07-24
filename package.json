@@ -23,7 +23,8 @@
     "dead-fields": "pnpm build && node ./dist/cli.js",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:fixtures:update": "UPDATE_FIXTURES=1 vitest run tests/fixtures.test.ts"
+    "test:fixtures:update": "UPDATE_FIXTURES=1 vitest run tests/fixtures.test.ts",
+    "validate": "pnpm fallow dead-code && pnpm biome check --write && pnpm test && pnpm build"
   },
   "keywords": [
     "typescript",

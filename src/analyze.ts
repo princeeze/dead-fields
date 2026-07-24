@@ -175,6 +175,8 @@ export function analyzeSource(
   // and grows as we compare declarations against reads in pass 2.
   const deadProperties: DeadProperty[] = [];
 
+  const aliases = buildAliasMap(sourceFile);
+
   // ── Pass 2: compare declarations to reads ─────────────────────────────
   //
   // For each object we tracked in pass 1, figure out which of its properties
@@ -238,9 +240,10 @@ export function analyzeSource(
 
       // The "expression" is everything to the left of the dot.
       // In `config.host`, the expression is `config`.
-      // We only count reads where the expression exactly matches the objectName
-      // we are currently analyzing.
-      if (access.getExpression().getText() !== tracked.objectName) {
+      // We only count reads where the expression matches the objectName we are
+      // currently analyzing, including reads through a simple alias binding.
+      const expressionName = access.getExpression().getText();
+      if (resolveAlias(expressionName, aliases) !== tracked.objectName) {
         continue;
       }
 
@@ -407,4 +410,45 @@ function getPropertyAssignmentName(
     return nameNode.getText();
   }
   return undefined;
+}
+
+/**
+ * Map variable names to the identifier they were assigned from.
+ *
+ * Example — `const aliasRef = aliasSource` records `aliasRef → aliasSource`.
+ * Only direct identifier assignments are tracked; object literals and other
+ * expressions are ignored.
+ */
+function buildAliasMap(
+  sourceFile: ReturnType<Project["createSourceFile"]>,
+): Map<string, string> {
+  const aliases = new Map<string, string>();
+
+  for (const declaration of sourceFile.getVariableDeclarations()) {
+    const initializer = declaration.getInitializer();
+    if (!initializer || !Node.isIdentifier(initializer)) {
+      continue;
+    }
+
+    aliases.set(declaration.getName(), initializer.getText());
+  }
+
+  return aliases;
+}
+
+/** Follow alias chains until a non-aliased name is reached. */
+function resolveAlias(name: string, aliases: Map<string, string>): string {
+  const visited = new Set<string>();
+  let current = name;
+
+  while (aliases.has(current) && !visited.has(current)) {
+    visited.add(current);
+    const aliasCurrent = aliases.get(current);
+    if (!aliasCurrent) {
+      break;
+    }
+    current = aliasCurrent;
+  }
+
+  return current;
 }

@@ -38,8 +38,7 @@ export function renderSnippet(
       const before = errorLine[index - 1];
       const after = errorLine[index + options.propertyName.length];
       const isIdentifier =
-        (!before || !/[\w$]/.test(before)) &&
-        (!after || !/[\w$]/.test(after));
+        (!before || !/[\w$]/.test(before)) && (!after || !/[\w$]/.test(after));
 
       if (isIdentifier) {
         propertyColumn = index + 1;
