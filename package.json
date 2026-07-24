@@ -1,6 +1,6 @@
 {
   "name": "dead-fields",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Static analysis for detecting unread object literal properties in TypeScript",
   "type": "module",
   "main": "./dist/index.js",
