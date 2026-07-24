@@ -1,3 +1,53 @@
+/**
+ * Core analysis engine for dead-fields.
+ *
+ * This file answers one question: "Which properties on object literals are
+ * declared but never read via dot notation (like `config.port`)?"
+ *
+ * How it works, in two passes:
+ *   1. Find every object literal assigned to a variable (e.g. `const config = { … }`).
+ *   2. For each one, compare its declared property names against every
+ *      `variableName.propertyName` read in the same file.
+ *
+ * Anything declared but never read is reported as a "dead property".
+ *
+ * This module is called by analyze-file.ts (single file) and analyze-directory.ts
+ * (whole folder). If you want to change what counts as a read or a declaration,
+ * this is the file to edit.
+ *
+ * ── Running example used in the comments below ──────────────────────────
+ *
+ *   const config = {
+ *     host: "localhost",
+ *     port: 3000,
+ *     deprecated: true,
+ *   };
+ *
+ *   console.log(config.host);
+ *
+ * Expected result: `port` and `deprecated` are dead because only `config.host`
+ * is read. `host` is used and is therefore not reported.
+ *
+ * ── Key terms ───────────────────────────────────────────────────────────
+ *
+ * AST (Abstract Syntax Tree)
+ *   A tree representation of source code produced by the TypeScript parser.
+ *   Instead of reading text character by character, we walk this tree to find
+ *   patterns like "variable assigned to object literal" or "property access".
+ *
+ * ts-morph
+ *   A library that wraps the TypeScript compiler API and makes the AST easy
+ *   to navigate. We use it to parse a source string in memory (no files on disk).
+ *
+ * Object literal
+ *   A `{ key: value, … }` expression in JavaScript/TypeScript.
+ *
+ * Property access
+ *   Reading a property with a dot, like `config.host`. This is the only kind
+ *   of read we detect in phase 1. Destructuring, spreads, and aliases are
+ *   not supported yet (see README "Phase 1 scope").
+ */
+
 import {
   Node,
   type ObjectLiteralExpression,
@@ -6,43 +56,201 @@ import {
   ScriptTarget,
   type ShorthandPropertyAssignment,
   SyntaxKind,
+  ts,
 } from "ts-morph";
-import { JsxEmit } from "typescript";
 import type { AnalysisResult, AnalyzeOptions, DeadProperty } from "./types.js";
 
+/**
+ * Internal bookkeeping for one object literal we want to analyze.
+ *
+ * When we find `const config = { host: "x", port: 1 }`, we create:
+ *
+ *   objectName:  "config"
+ *   properties:  a map from each property name to where it appears in source
+ *                e.g. "host" → line 1, column 16
+ *                     "port" → line 1, column 29
+ *
+ * Nested objects get their own TrackedObject with a dotted name like
+ * "config.database" (see collectNestedObjectLiterals).
+ */
 interface TrackedObject {
   objectName: string;
   properties: Map<string, { line: number; column: number }>;
 }
 
+/**
+ * Analyze a source string and return every dead property found in it.
+ *
+ * @param source  - The full text of a TypeScript/TSX file.
+ * @param options - Must include `filePath`, used only for reporting (the file
+ *                  is not read from disk; parsing happens in memory).
+ *
+ * @returns An object with a `deadProperties` array. Each entry tells you which
+ *          file, which variable, which property, and where in the file it sits.
+ */
 export function analyzeSource(
   source: string,
-  options: AnalyzeOptions = {},
+  options: AnalyzeOptions,
 ): AnalysisResult {
-  const filePath = options.filePath ?? "source.ts";
+  // The file path is included in every dead-property report so callers know
+  // where the issue lives. For the running example this would be something
+  // like "src/config.ts".
+  const { filePath } = options;
 
+  // Create a throwaway TypeScript project that lives entirely in memory.
+  // We never write to disk — we just need a parser.
   const project = new Project({
     useInMemoryFileSystem: true,
     compilerOptions: {
       target: ScriptTarget.ESNext,
-      jsx: filePath.endsWith(".tsx") ? JsxEmit.React : undefined,
+      // TSX files contain JSX (`<Component />`). Tell the parser to expect it
+      // when the virtual file path ends in `.tsx`. Plain `.ts` files leave
+      // this undefined.
+      jsx: filePath.endsWith(".tsx") ? ts.JsxEmit.React : undefined,
     },
   });
 
+  // Turn the source string into a parsed AST (a SourceFile node).
+  // From this point on we navigate the tree with ts-morph helpers instead of
+  // searching raw text.
   const sourceFile = project.createSourceFile(filePath, source, {
     overwrite: true,
   });
 
-  const trackedObjects = collectObjectLiterals(sourceFile);
+  // ── Pass 1: collect declarations ──────────────────────────────────────
+  //
+  // Walk every variable declaration in the file (`const`, `let`, or `var`) and
+  // keep the ones whose right-hand side is an object literal `{ … }`.
+  //
+  // Example file:
+  //
+  //   const config = {
+  //     host: "localhost",
+  //     database: { host: "db", port: 5432 },
+  //   };
+  //   const count = 42;
+  //
+  // What happens:
+  //   - `const config = { … }` → tracked (object literal on the right)
+  //   - `const count = 42`     → skipped (a number, not an object literal)
+  //
+  // For the running example this produces one TrackedObject named "config"
+  // whose properties map contains "host", "port", and "deprecated".
+  const trackedObjects: TrackedObject[] = [];
+
+  // getVariableDeclarations() returns every `const x = …` / `let x = …` node
+  // in the file, regardless of whether it is at the top level or inside a block.
+  // @remarks — This does not return the variable declarations within for statements or for of statements.
+  for (const declaration of sourceFile.getVariableDeclarations()) {
+    // The "initializer" is the expression on the right side of the `=`.
+    // For `const config = { host: "x" }`, the initializer is the `{ … }` part.
+    const initializer = declaration.getInitializer();
+
+    // We only care about declarations where the right-hand side is literally
+    // an object literal. Skip everything else (numbers, function calls, etc.).
+    if (!initializer || !Node.isObjectLiteralExpression(initializer)) {
+      continue;
+    }
+
+    // The variable name becomes how we refer to this object when looking for
+    // reads. `const config = …` → we will search for `config.something`.
+    const objectName = declaration.getName();
+
+    // Record every property key on this object literal along with its position
+    // in the source file (used for error reporting).
+    const properties = extractPropertyNames(initializer);
+
+    // An empty object `{}` has nothing to analyze, so skip it.
+    if (properties.size > 0) {
+      trackedObjects.push({ objectName, properties });
+    }
+
+    // The top-level object may contain nested object literals as property
+    // values (like `database: { … }` above). Handle those separately so each
+    // nesting level gets its own TrackedObject with a dotted name.
+    collectNestedObjectLiterals(initializer, objectName, trackedObjects);
+  }
+
+  // This array will hold the final list of dead properties. It starts empty
+  // and grows as we compare declarations against reads in pass 2.
   const deadProperties: DeadProperty[] = [];
 
+  // ── Pass 2: compare declarations to reads ─────────────────────────────
+  //
+  // For each object we tracked in pass 1, figure out which of its properties
+  // are actually accessed somewhere in the file.
   for (const tracked of trackedObjects) {
-    const readProperties = collectDirectPropertyReads(
-      sourceFile,
-      tracked.objectName,
-    );
+    // Find every `config.something` read in the file.
+    //
+    // We search the entire file for expressions shaped like
+    // `objectName.propertyName` and collect the property names from the right
+    // side of the dot.
+    //
+    // Example — searching for reads of "config":
+    //
+    //   console.log(config.host);          // counts: "host"
+    //   const y = config.database.host;    // does NOT count toward "config"
+    //
+    // Reads we intentionally ignore (see README "Phase 1 scope"):
+    //   - Optional chaining:  config?.host
+    //   - JSX expressions:    <Foo bar={config.host} />
+    //
+    // For the running example, the only match is `config.host`, so
+    // readProperties ends up containing just "host".
+    const readProperties = new Set<string>();
 
+    // A PropertyAccessExpression is any `something.property` in the AST.
+    // getDescendantsOfKind walks the entire tree and returns every match.
+    for (const access of sourceFile.getDescendantsOfKind(
+      SyntaxKind.PropertyAccessExpression,
+    )) {
+      // Optional chaining (`config?.host`) is excluded because the property
+      // might not actually be accessed at runtime.
+      if (access.hasQuestionDotToken()) {
+        continue;
+      }
+
+      // Property accesses inside JSX are excluded for now. Walk up the parent
+      // chain looking for a JSX-related ancestor.
+      //
+      // Example — for `config.host` inside `<Component prop={config.host} />`:
+      //   config.host → PropertyAccessExpression
+      //        ↑ parent
+      //   {config.host} → JsxExpression  ← stop here, skip this read
+      let current: Node | undefined = access;
+      let insideJsx = false;
+      while (current) {
+        if (
+          Node.isJsxAttribute(current) ||
+          Node.isJsxExpression(current) ||
+          Node.isJsxElement(current) ||
+          Node.isJsxSelfClosingElement(current) ||
+          Node.isJsxFragment(current)
+        ) {
+          insideJsx = true;
+          break;
+        }
+        current = current.getParent();
+      }
+      if (insideJsx) {
+        continue;
+      }
+
+      // The "expression" is everything to the left of the dot.
+      // In `config.host`, the expression is `config`.
+      // We only count reads where the expression exactly matches the objectName
+      // we are currently analyzing.
+      if (access.getExpression().getText() !== tracked.objectName) {
+        continue;
+      }
+
+      // The "name" is the identifier to the right of the dot.
+      readProperties.add(access.getName());
+    }
+
+    // Go through every property declared on this object literal.
     for (const [propertyName, location] of tracked.properties) {
+      // If the property name never appeared in a dot-access, it is dead.
       if (!readProperties.has(propertyName)) {
         deadProperties.push({
           file: filePath,
@@ -53,77 +261,111 @@ export function analyzeSource(
         });
       }
     }
+
+    // After processing "config" in the running example, deadProperties contains:
+    //   { objectName: "config", propertyName: "port",       … }
+    //   { objectName: "config", propertyName: "deprecated", … }
+    // "host" was found in readProperties, so it is not included.
   }
 
   return { deadProperties };
 }
 
-function collectObjectLiterals(
-  sourceFile: import("ts-morph").SourceFile,
-): TrackedObject[] {
-  const results: TrackedObject[] = [];
-
-  for (const declaration of sourceFile.getVariableDeclarations()) {
-    const initializer = declaration.getInitializer();
-    if (!initializer || !Node.isObjectLiteralExpression(initializer)) {
-      continue;
-    }
-
-    const objectName = declaration.getName();
-    const properties = extractPropertyNames(initializer);
-
-    if (properties.size > 0) {
-      results.push({ objectName, properties });
-    }
-
-    collectNestedObjectLiterals(initializer, objectName, results);
-  }
-
-  return results;
-}
-
+/**
+ * Find object literals nested inside another object literal's property values.
+ *
+ * This function is called recursively. Each time it finds a property whose
+ * value is another `{ … }`, it creates a new TrackedObject with a dotted path.
+ *
+ * Example — given this declaration:
+ *
+ *   const config = {
+ *     host: "localhost",                        // value is a string → skip
+ *     database: { host: "db", port: 5432 },    // value is an object → track
+ *   };
+ *
+ * On the first call, parentPath is "config" and we walk the outer `{ … }`.
+ * When we reach the `database` property:
+ *   - Its value is an object literal, so we track it as "config.database".
+ *   - We then recurse into that inner literal in case it has further nesting.
+ *
+ * The new entry appended to results:
+ *
+ *   { objectName: "config.database", properties: { host, port } }
+ *
+ * Why dotted paths matter:
+ *   A read like `config.database.host` is matched against the object named
+ *   "config.database", not "config". Each nesting level is analyzed on its own.
+ */
 function collectNestedObjectLiterals(
   objectLiteral: ObjectLiteralExpression,
   parentPath: string,
   results: TrackedObject[],
 ): void {
+  // getProperties() returns every member inside the `{ … }` — assignments,
+  // shorthand properties, methods, spreads, etc.
   for (const property of objectLiteral.getProperties()) {
+    // Only `key: value` assignments can have a nested object as their value.
+    // We skip spreads (`...rest`), methods (`fn() {}`), and getters/setters
+    // because they are different AST node types.
     if (!Node.isPropertyAssignment(property)) {
       continue;
     }
 
+    // The initializer is the expression after the colon in `key: value`.
     const initializer = property.getInitializer();
+
+    // If the value is not another object literal (e.g. it is a string or
+    // number), there is nothing nested to track here.
     if (!initializer || !Node.isObjectLiteralExpression(initializer)) {
       continue;
     }
 
+    // Read the property key (e.g. "database" from `database: { … }`).
     const propertyName = getPropertyAssignmentName(property);
     if (!propertyName) {
       continue;
     }
 
+    // Combine the parent path with this key to form the dotted access path.
+    // parentPath "config" + propertyName "database" → "config.database"
     const nestedPath = `${parentPath}.${propertyName}`;
+
+    // Collect the property names declared inside the nested object literal.
     const properties = extractPropertyNames(initializer);
 
     if (properties.size > 0) {
       results.push({ objectName: nestedPath, properties });
     }
 
+    // The nested literal might itself contain further nested objects.
+    // Call this function again on the inner literal to handle arbitrary depth.
     collectNestedObjectLiterals(initializer, nestedPath, results);
   }
 }
 
+/**
+ * Build a map of property names → source locations for one object literal.
+ *
+ * Given `{ host: "x", port, fn() {} }`:
+ *
+ *   "host" → included (normal `key: value` assignment)
+ *   "port" → included (shorthand for `port: port`)
+ *   "fn"   → skipped (this is a method, not a data property)
+ *
+ * The line and column values are 1-based (first line is line 1, not 0) so
+ * they match what editors and humans expect.
+ *
+ * To support a new property form (e.g. getters), add a branch in the loop below.
+ */
 function extractPropertyNames(
   objectLiteral: ObjectLiteralExpression,
 ): Map<string, { line: number; column: number }> {
   const properties = new Map<string, { line: number; column: number }>();
 
   for (const property of objectLiteral.getProperties()) {
-    const name = getPropertyName(property);
-    if (!name) {
-      continue;
-    }
-
+    // Resolve the property to a plain string name when it is a normal
+    // assignment or shorthand. Methods, spreads, and accessors are skipped.
     if (
       !Node.isPropertyAssignment(property) &&
       !Node.isShorthandPropertyAssignment(property)
@@ -131,6 +373,12 @@ function extractPropertyNames(
       continue;
     }
 
+    const name = getPropertyAssignmentName(property);
+    if (!name) {
+      continue;
+    }
+
+    // Find the exact position of the property name in the source text.
     const nameNode = property.getNameNode();
     const { line, column } = nameNode
       .getSourceFile()
@@ -142,18 +390,15 @@ function extractPropertyNames(
   return properties;
 }
 
-function getPropertyName(
-  property: import("ts-morph").ObjectLiteralElementLike,
-): string | undefined {
-  if (
-    Node.isPropertyAssignment(property) ||
-    Node.isShorthandPropertyAssignment(property)
-  ) {
-    return getPropertyAssignmentName(property);
-  }
-  return undefined;
-}
-
+/**
+ * Read the identifier text from a property assignment's key.
+ *
+ * We only support simple identifier keys right now. That means `host` in
+ * `{ host: "x" }` works, but `{ ["host"]: "x" }` does not — the key is a
+ * string literal expression, not an identifier, so we return undefined.
+ *
+ * To add computed-key support, you would handle non-identifier name nodes here.
+ */
 function getPropertyAssignmentName(
   property: PropertyAssignment | ShorthandPropertyAssignment,
 ): string | undefined {
@@ -162,46 +407,4 @@ function getPropertyAssignmentName(
     return nameNode.getText();
   }
   return undefined;
-}
-
-function collectDirectPropertyReads(
-  sourceFile: import("ts-morph").SourceFile,
-  objectName: string,
-): Set<string> {
-  const readProperties = new Set<string>();
-
-  for (const access of sourceFile.getDescendantsOfKind(
-    SyntaxKind.PropertyAccessExpression,
-  )) {
-    if (access.hasQuestionDotToken() || isInsideJsx(access)) {
-      continue;
-    }
-
-    if (access.getExpression().getText() !== objectName) {
-      continue;
-    }
-
-    readProperties.add(access.getName());
-  }
-
-  return readProperties;
-}
-
-function isInsideJsx(node: Node): boolean {
-  let current: Node | undefined = node;
-
-  while (current) {
-    if (
-      Node.isJsxAttribute(current) ||
-      Node.isJsxExpression(current) ||
-      Node.isJsxElement(current) ||
-      Node.isJsxSelfClosingElement(current) ||
-      Node.isJsxFragment(current)
-    ) {
-      return true;
-    }
-    current = current.getParent();
-  }
-
-  return false;
 }
