@@ -183,7 +183,6 @@ export function analyzeSource(
     //   const y = config.database.host;    // does NOT count toward "config"
     //
     // Reads we intentionally ignore (see README "Phase 1 scope"):
-    //   - JSX expressions:    <Foo bar={config.host} />
     //
     // For the running example, the only match is `config.host`, so
     // readProperties ends up containing just "host".
@@ -194,10 +193,6 @@ export function analyzeSource(
     for (const access of sourceFile.getDescendantsOfKind(
       SyntaxKind.PropertyAccessExpression,
     )) {
-      if (isInsideJsx(access)) {
-        continue;
-      }
-
       // The "expression" is everything to the left of the dot.
       // In `config.host`, the expression is `config`.
       // We only count reads where the expression matches the objectName we are
@@ -214,10 +209,6 @@ export function analyzeSource(
     for (const access of sourceFile.getDescendantsOfKind(
       SyntaxKind.ElementAccessExpression,
     )) {
-      if (isInsideJsx(access)) {
-        continue;
-      }
-
       const expressionName = access.getExpression().getText();
       if (resolveAlias(expressionName, aliases) !== tracked.objectName) {
         continue;
@@ -495,23 +486,4 @@ function resolveComputedPropertyName(
   }
 
   return undefined;
-}
-
-function isInsideJsx(node: Node): boolean {
-  let current: Node | undefined = node;
-
-  while (current) {
-    if (
-      Node.isJsxAttribute(current) ||
-      Node.isJsxExpression(current) ||
-      Node.isJsxElement(current) ||
-      Node.isJsxSelfClosingElement(current) ||
-      Node.isJsxFragment(current)
-    ) {
-      return true;
-    }
-    current = current.getParent();
-  }
-
-  return false;
 }
