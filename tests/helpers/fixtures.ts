@@ -1,6 +1,6 @@
 import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join, relative } from "node:path";
-import type { AnalysisResult, DeadProperty } from "../../src/types.js";
+import { join } from "node:path";
+import type { AnalysisResult } from "../../src/types.js";
 
 export interface FixtureCase {
   name: string;
@@ -78,7 +78,7 @@ export function toFixtureExpected(result: AnalysisResult): FixtureExpected {
   };
 }
 
-export function sortExpectedDeadProperties(
+ function sortExpectedDeadProperties(
   deadProperties: ExpectedDeadProperty[],
 ): ExpectedDeadProperty[] {
   return [...deadProperties].sort((left, right) => {
@@ -88,22 +88,4 @@ export function sortExpectedDeadProperties(
       left.propertyName.localeCompare(right.propertyName)
     );
   });
-}
-
-export function sortDeadProperties(
-  deadProperties: DeadProperty[],
-): DeadProperty[] {
-  return [...deadProperties].sort((left, right) => {
-    return (
-      left.file.localeCompare(right.file) ||
-      left.objectName.localeCompare(right.objectName) ||
-      left.propertyName.localeCompare(right.propertyName) ||
-      left.line - right.line ||
-      left.column - right.column
-    );
-  });
-}
-
-export function fixtureCaseTitle(fixtureCase: FixtureCase): string {
-  return relative(CASES_ROOT, fixtureCase.dir);
 }

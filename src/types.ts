@@ -16,6 +16,6 @@ export interface AnalysisResult {
 }
 
 export interface AnalyzeOptions {
-  /** Virtual file path used for parsing (defaults to "source.ts") */
-  filePath?: string;
+  /** Path to the source file, relative to the analyzed directory */
+  filePath: string;
 }
