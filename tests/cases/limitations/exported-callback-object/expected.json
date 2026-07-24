@@ -1,0 +1,34 @@
+{
+  "deadProperties": [
+    {
+      "file": "db-logger.ts",
+      "objectName": "kyselyLogger",
+      "propertyName": "debug"
+    },
+    {
+      "file": "db-logger.ts",
+      "objectName": "kyselyLogger",
+      "propertyName": "error"
+    },
+    {
+      "file": "db-logger.ts",
+      "objectName": "kyselyLogger",
+      "propertyName": "fatal"
+    },
+    {
+      "file": "db-logger.ts",
+      "objectName": "kyselyLogger",
+      "propertyName": "info"
+    },
+    {
+      "file": "db-logger.ts",
+      "objectName": "kyselyLogger",
+      "propertyName": "trace"
+    },
+    {
+      "file": "db-logger.ts",
+      "objectName": "kyselyLogger",
+      "propertyName": "warn"
+    }
+  ]
+}
