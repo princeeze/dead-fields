@@ -57,6 +57,7 @@ import {
   type ShorthandPropertyAssignment,
   SyntaxKind,
   ts,
+  type VariableDeclaration,
 } from "ts-morph";
 import type { AnalysisResult, AnalyzeOptions, DeadProperty } from "./types.js";
 
@@ -140,35 +141,22 @@ export function analyzeSource(
 
   // getVariableDeclarations() returns every `const x = …` / `let x = …` node
   // in the file, regardless of whether it is at the top level or inside a block.
-  // @remarks — This does not return the variable declarations within for statements or for of statements.
+  // For-loop initializers are handled separately below.
   for (const declaration of sourceFile.getVariableDeclarations()) {
-    // The "initializer" is the expression on the right side of the `=`.
-    // For `const config = { host: "x" }`, the initializer is the `{ … }` part.
-    const initializer = declaration.getInitializer();
+    trackObjectLiteralDeclaration(declaration, trackedObjects);
+  }
 
-    // We only care about declarations where the right-hand side is literally
-    // an object literal. Skip everything else (numbers, function calls, etc.).
-    if (!initializer || !Node.isObjectLiteralExpression(initializer)) {
+  for (const forStatement of sourceFile.getDescendantsOfKind(
+    SyntaxKind.ForStatement,
+  )) {
+    const initializer = forStatement.getInitializer();
+    if (!initializer || !Node.isVariableDeclarationList(initializer)) {
       continue;
     }
 
-    // The variable name becomes how we refer to this object when looking for
-    // reads. `const config = …` → we will search for `config.something`.
-    const objectName = declaration.getName();
-
-    // Record every property key on this object literal along with its position
-    // in the source file (used for error reporting).
-    const properties = extractPropertyNames(initializer);
-
-    // An empty object `{}` has nothing to analyze, so skip it.
-    if (properties.size > 0) {
-      trackedObjects.push({ objectName, properties });
+    for (const declaration of initializer.getDeclarations()) {
+      trackObjectLiteralDeclaration(declaration, trackedObjects);
     }
-
-    // The top-level object may contain nested object literals as property
-    // values (like `database: { … }` above). Handle those separately so each
-    // nesting level gets its own TrackedObject with a dotted name.
-    collectNestedObjectLiterals(initializer, objectName, trackedObjects);
   }
 
   // This array will hold the final list of dead properties. It starts empty
@@ -265,6 +253,25 @@ export function analyzeSource(
   }
 
   return { deadProperties };
+}
+
+function trackObjectLiteralDeclaration(
+  declaration: VariableDeclaration,
+  trackedObjects: TrackedObject[],
+): void {
+  const initializer = declaration.getInitializer();
+  if (!initializer || !Node.isObjectLiteralExpression(initializer)) {
+    return;
+  }
+
+  const objectName = declaration.getName();
+  const properties = extractPropertyNames(initializer);
+
+  if (properties.size > 0) {
+    trackedObjects.push({ objectName, properties });
+  }
+
+  collectNestedObjectLiterals(initializer, objectName, trackedObjects);
 }
 
 /**
