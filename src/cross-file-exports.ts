@@ -82,15 +82,16 @@ export function collectCrossFileObjectReads(
         const exported = exportedObjects.get(
           exportKey(resolvedPath, importedName),
         );
-        if (!exported || !isBindingReferenced(sourceFile, localName)) {
+        if (!exported) {
           continue;
         }
 
-        for (const propertyName of exported.properties) {
-          crossFileReads.add(
-            deadPropertyKey(exported.filePath, exported.objectName, propertyName),
-          );
-        }
+        collectImportedBindingReads(
+          sourceFile,
+          localName,
+          exported,
+          crossFileReads,
+        );
       }
     }
   }
@@ -246,7 +247,33 @@ function resolveRelativeImport(
   return matching[0];
 }
 
-function isBindingReferenced(
+function collectImportedBindingReads(
+  sourceFile: SourceFile,
+  localName: string,
+  exported: ExportedObject,
+  crossFileReads: Set<string>,
+): void {
+  const accessedProperties = collectAccessedProperties(sourceFile, localName);
+
+  if (hasWholeObjectReference(sourceFile, localName)) {
+    for (const propertyName of exported.properties) {
+      crossFileReads.add(
+        deadPropertyKey(exported.filePath, exported.objectName, propertyName),
+      );
+    }
+    return;
+  }
+
+  for (const propertyName of accessedProperties) {
+    if (exported.properties.has(propertyName)) {
+      crossFileReads.add(
+        deadPropertyKey(exported.filePath, exported.objectName, propertyName),
+      );
+    }
+  }
+}
+
+function hasWholeObjectReference(
   sourceFile: SourceFile,
   bindingName: string,
 ): boolean {
@@ -257,20 +284,79 @@ function isBindingReferenced(
         return false;
       }
 
+      if (isImportOrDeclarationBinding(identifier)) {
+        return false;
+      }
+
       const parent = identifier.getParent();
-      if (Node.isImportSpecifier(parent) && parent.getNameNode() === identifier) {
+      if (
+        Node.isPropertyAccessExpression(parent) &&
+        parent.getExpression() === identifier
+      ) {
         return false;
       }
 
       if (
-        Node.isVariableDeclaration(parent) &&
-        parent.getNameNode() === identifier
+        Node.isElementAccessExpression(parent) &&
+        parent.getExpression() === identifier
       ) {
         return false;
       }
 
       return true;
     });
+}
+
+function collectAccessedProperties(
+  sourceFile: SourceFile,
+  bindingName: string,
+): Set<string> {
+  const properties = new Set<string>();
+
+  for (const access of sourceFile.getDescendantsOfKind(
+    SyntaxKind.PropertyAccessExpression,
+  )) {
+    if (access.getExpression().getText() !== bindingName) {
+      continue;
+    }
+
+    properties.add(access.getName());
+  }
+
+  for (const access of sourceFile.getDescendantsOfKind(
+    SyntaxKind.ElementAccessExpression,
+  )) {
+    if (access.getExpression().getText() !== bindingName) {
+      continue;
+    }
+
+    const argumentExpression = access.getArgumentExpression();
+    if (
+      argumentExpression &&
+      (Node.isStringLiteral(argumentExpression) ||
+        Node.isNoSubstitutionTemplateLiteral(argumentExpression))
+    ) {
+      properties.add(argumentExpression.getLiteralValue());
+    }
+  }
+
+  return properties;
+}
+
+function isImportOrDeclarationBinding(identifier: Node): boolean {
+  const parent = identifier.getParent();
+  if (Node.isImportSpecifier(parent) && parent.getNameNode() === identifier) {
+    return true;
+  }
+
+  if (
+    Node.isVariableDeclaration(parent) &&
+    parent.getNameNode() === identifier
+  ) {
+    return true;
+  }
+
+  return false;
 }
 
 function exportKey(filePath: string, objectName: string): string {

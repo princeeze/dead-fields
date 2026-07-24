@@ -1,0 +1,9 @@
+{
+  "deadProperties": [
+    {
+      "file": "a.ts",
+      "objectName": "obj",
+      "propertyName": "y"
+    }
+  ]
+}
