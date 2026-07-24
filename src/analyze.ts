@@ -252,6 +252,23 @@ export function analyzeSource(
       }
     }
 
+    for (const spread of sourceFile.getDescendantsOfKind(
+      SyntaxKind.SpreadAssignment,
+    )) {
+      const expression = spread.getExpression();
+      if (!expression || !Node.isIdentifier(expression)) {
+        continue;
+      }
+
+      if (resolveAlias(expression.getText(), aliases) !== tracked.objectName) {
+        continue;
+      }
+
+      for (const propertyName of tracked.properties.keys()) {
+        readProperties.add(propertyName);
+      }
+    }
+
     // Go through every property declared on this object literal.
     for (const [propertyName, location] of tracked.properties) {
       // If the property name never appeared in a dot-access, it is dead.
