@@ -3,11 +3,6 @@
     {
       "file": "index.ts",
       "objectName": "destructureSource",
-      "propertyName": "a"
-    },
-    {
-      "file": "index.ts",
-      "objectName": "destructureSource",
       "propertyName": "b"
     }
   ]

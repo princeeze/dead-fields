@@ -49,6 +49,7 @@
  */
 
 import {
+  type BindingElement,
   Node,
   type ObjectLiteralExpression,
   Project,
@@ -225,6 +226,29 @@ export function analyzeSource(
       );
       if (propertyName) {
         readProperties.add(propertyName);
+      }
+    }
+
+    for (const declaration of sourceFile.getVariableDeclarations()) {
+      const initializer = declaration.getInitializer();
+      if (!initializer || !Node.isIdentifier(initializer)) {
+        continue;
+      }
+
+      if (resolveAlias(initializer.getText(), aliases) !== tracked.objectName) {
+        continue;
+      }
+
+      const nameNode = declaration.getNameNode();
+      if (!Node.isObjectBindingPattern(nameNode)) {
+        continue;
+      }
+
+      for (const element of nameNode.getElements()) {
+        const propertyName = getBindingElementPropertyName(element);
+        if (propertyName) {
+          readProperties.add(propertyName);
+        }
       }
     }
 
@@ -483,6 +507,25 @@ function resolveComputedPropertyName(
 
   if (Node.isIdentifier(argumentExpression)) {
     return stringLiterals.get(argumentExpression.getText());
+  }
+
+  return undefined;
+}
+
+function getBindingElementPropertyName(
+  element: BindingElement,
+): string | undefined {
+  const propertyNameNode = element.getPropertyNameNode();
+  if (propertyNameNode) {
+    if (Node.isIdentifier(propertyNameNode)) {
+      return propertyNameNode.getText();
+    }
+    return undefined;
+  }
+
+  const bindingName = element.getNameNode();
+  if (Node.isIdentifier(bindingName)) {
+    return bindingName.getText();
   }
 
   return undefined;
