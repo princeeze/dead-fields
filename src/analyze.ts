@@ -164,6 +164,7 @@ export function analyzeSource(
   const deadProperties: DeadProperty[] = [];
 
   const aliases = buildAliasMap(sourceFile);
+  const stringLiterals = buildStringLiteralMap(sourceFile);
 
   // ── Pass 2: compare declarations to reads ─────────────────────────────
   //
@@ -193,29 +194,7 @@ export function analyzeSource(
     for (const access of sourceFile.getDescendantsOfKind(
       SyntaxKind.PropertyAccessExpression,
     )) {
-      // Property accesses inside JSX are excluded for now. Walk up the parent
-      // chain looking for a JSX-related ancestor.
-      //
-      // Example — for `config.host` inside `<Component prop={config.host} />`:
-      //   config.host → PropertyAccessExpression
-      //        ↑ parent
-      //   {config.host} → JsxExpression  ← stop here, skip this read
-      let current: Node | undefined = access;
-      let insideJsx = false;
-      while (current) {
-        if (
-          Node.isJsxAttribute(current) ||
-          Node.isJsxExpression(current) ||
-          Node.isJsxElement(current) ||
-          Node.isJsxSelfClosingElement(current) ||
-          Node.isJsxFragment(current)
-        ) {
-          insideJsx = true;
-          break;
-        }
-        current = current.getParent();
-      }
-      if (insideJsx) {
+      if (isInsideJsx(access)) {
         continue;
       }
 
@@ -230,6 +209,32 @@ export function analyzeSource(
 
       // The "name" is the identifier to the right of the dot.
       readProperties.add(access.getName());
+    }
+
+    for (const access of sourceFile.getDescendantsOfKind(
+      SyntaxKind.ElementAccessExpression,
+    )) {
+      if (isInsideJsx(access)) {
+        continue;
+      }
+
+      const expressionName = access.getExpression().getText();
+      if (resolveAlias(expressionName, aliases) !== tracked.objectName) {
+        continue;
+      }
+
+      const argumentExpression = access.getArgumentExpression();
+      if (!argumentExpression) {
+        continue;
+      }
+
+      const propertyName = resolveComputedPropertyName(
+        argumentExpression,
+        stringLiterals,
+      );
+      if (propertyName) {
+        readProperties.add(propertyName);
+      }
     }
 
     // Go through every property declared on this object literal.
@@ -451,4 +456,62 @@ function resolveAlias(name: string, aliases: Map<string, string>): string {
   }
 
   return current;
+}
+
+function buildStringLiteralMap(
+  sourceFile: ReturnType<Project["createSourceFile"]>,
+): Map<string, string> {
+  const stringLiterals = new Map<string, string>();
+
+  for (const declaration of sourceFile.getVariableDeclarations()) {
+    const initializer = declaration.getInitializer();
+    if (
+      !initializer ||
+      (!Node.isStringLiteral(initializer) &&
+        !Node.isNoSubstitutionTemplateLiteral(initializer))
+    ) {
+      continue;
+    }
+
+    stringLiterals.set(declaration.getName(), initializer.getLiteralValue());
+  }
+
+  return stringLiterals;
+}
+
+function resolveComputedPropertyName(
+  argumentExpression: Node,
+  stringLiterals: Map<string, string>,
+): string | undefined {
+  if (
+    Node.isStringLiteral(argumentExpression) ||
+    Node.isNoSubstitutionTemplateLiteral(argumentExpression)
+  ) {
+    return argumentExpression.getLiteralValue();
+  }
+
+  if (Node.isIdentifier(argumentExpression)) {
+    return stringLiterals.get(argumentExpression.getText());
+  }
+
+  return undefined;
+}
+
+function isInsideJsx(node: Node): boolean {
+  let current: Node | undefined = node;
+
+  while (current) {
+    if (
+      Node.isJsxAttribute(current) ||
+      Node.isJsxExpression(current) ||
+      Node.isJsxElement(current) ||
+      Node.isJsxSelfClosingElement(current) ||
+      Node.isJsxFragment(current)
+    ) {
+      return true;
+    }
+    current = current.getParent();
+  }
+
+  return false;
 }
