@@ -194,7 +194,6 @@ export function analyzeSource(
     //   const y = config.database.host;    // does NOT count toward "config"
     //
     // Reads we intentionally ignore (see README "Phase 1 scope"):
-    //   - Optional chaining:  config?.host
     //   - JSX expressions:    <Foo bar={config.host} />
     //
     // For the running example, the only match is `config.host`, so
@@ -206,12 +205,6 @@ export function analyzeSource(
     for (const access of sourceFile.getDescendantsOfKind(
       SyntaxKind.PropertyAccessExpression,
     )) {
-      // Optional chaining (`config?.host`) is excluded because the property
-      // might not actually be accessed at runtime.
-      if (access.hasQuestionDotToken()) {
-        continue;
-      }
-
       // Property accesses inside JSX are excluded for now. Walk up the parent
       // chain looking for a JSX-related ancestor.
       //

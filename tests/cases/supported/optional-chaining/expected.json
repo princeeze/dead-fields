@@ -3,11 +3,6 @@
     {
       "file": "index.ts",
       "objectName": "optionalSource",
-      "propertyName": "a"
-    },
-    {
-      "file": "index.ts",
-      "objectName": "optionalSource",
       "propertyName": "b"
     }
   ]
