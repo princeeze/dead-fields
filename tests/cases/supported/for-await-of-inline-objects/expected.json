@@ -1,0 +1,9 @@
+{
+  "deadProperties": [
+    {
+      "file": "index.ts",
+      "objectName": "__inline:3:29",
+      "propertyName": "unread"
+    }
+  ]
+}

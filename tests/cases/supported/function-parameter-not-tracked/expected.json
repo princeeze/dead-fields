@@ -1,14 +1,3 @@
 {
-  "deadProperties": [
-    {
-      "file": "index.ts",
-      "objectName": "passedThrough",
-      "propertyName": "a"
-    },
-    {
-      "file": "index.ts",
-      "objectName": "passedThrough",
-      "propertyName": "b"
-    }
-  ]
+  "deadProperties": []
 }

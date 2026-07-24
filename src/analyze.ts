@@ -43,13 +43,14 @@
  *   A `{ key: value, … }` expression in JavaScript/TypeScript.
  *
  * Property access
- *   Reading a property with a dot, like `config.host`. This is the only kind
- *   of read we detect in phase 1. Destructuring, spreads, and aliases are
- *   not supported yet (see README "Phase 1 scope").
+ *   Reading a property with a dot, like `config.host`, plus destructuring,
+ *   spreads, aliases, JSX, and other supported read forms in a single file.
  */
 
 import {
   type BindingElement,
+  type ClassDeclaration,
+  type FunctionDeclaration,
   Node,
   type ObjectLiteralExpression,
   Project,
@@ -61,6 +62,11 @@ import {
   type VariableDeclaration,
 } from "ts-morph";
 import type { AnalysisResult, AnalyzeOptions, DeadProperty } from "./types.js";
+
+interface ForInBinding {
+  objectName: string;
+  loopVariable: string;
+}
 
 /**
  * Internal bookkeeping for one object literal we want to analyze.
@@ -139,6 +145,8 @@ export function analyzeSource(
   // For the running example this produces one TrackedObject named "config"
   // whose properties map contains "host", "port", and "deprecated".
   const trackedObjects: TrackedObject[] = [];
+  const iterationBindings = new Map<string, string>();
+  const forInBindings: ForInBinding[] = [];
 
   // getVariableDeclarations() returns every `const x = …` / `let x = …` node
   // in the file, regardless of whether it is at the top level or inside a block.
@@ -159,6 +167,15 @@ export function analyzeSource(
       trackObjectLiteralDeclaration(declaration, trackedObjects);
     }
   }
+
+  collectFactoryReturnAssignments(sourceFile, trackedObjects);
+  collectClassInstanceAssignments(sourceFile, trackedObjects);
+  collectInlineForLoopObjects(
+    sourceFile,
+    trackedObjects,
+    iterationBindings,
+    forInBindings,
+  );
 
   // This array will hold the final list of dead properties. It starts empty
   // and grows as we compare declarations against reads in pass 2.
@@ -199,7 +216,10 @@ export function analyzeSource(
       // We only count reads where the expression matches the objectName we are
       // currently analyzing, including reads through a simple alias binding.
       const expressionName = access.getExpression().getText();
-      if (resolveAlias(expressionName, aliases) !== tracked.objectName) {
+      if (
+        resolveObjectName(expressionName, aliases, iterationBindings) !==
+        tracked.objectName
+      ) {
         continue;
       }
 
@@ -211,7 +231,10 @@ export function analyzeSource(
       SyntaxKind.ElementAccessExpression,
     )) {
       const expressionName = access.getExpression().getText();
-      if (resolveAlias(expressionName, aliases) !== tracked.objectName) {
+      if (
+        resolveObjectName(expressionName, aliases, iterationBindings) !==
+        tracked.objectName
+      ) {
         continue;
       }
 
@@ -269,6 +292,24 @@ export function analyzeSource(
       }
     }
 
+    for (const propertyName of collectParameterFlowReads(
+      sourceFile,
+      tracked.objectName,
+      aliases,
+      iterationBindings,
+    )) {
+      readProperties.add(propertyName);
+    }
+
+    for (const propertyName of collectForInEnumerationReads(
+      sourceFile,
+      tracked.objectName,
+      forInBindings,
+      tracked,
+    )) {
+      readProperties.add(propertyName);
+    }
+
     // Go through every property declared on this object literal.
     for (const [propertyName, location] of tracked.properties) {
       // If the property name never appeared in a dot-access, it is dead.
@@ -301,14 +342,439 @@ function trackObjectLiteralDeclaration(
     return;
   }
 
-  const objectName = declaration.getName();
-  const properties = extractPropertyNames(initializer);
+  trackObjectLiteralByName(declaration.getName(), initializer, trackedObjects);
+}
+
+function trackObjectLiteralByName(
+  objectName: string,
+  objectLiteral: ObjectLiteralExpression,
+  trackedObjects: TrackedObject[],
+): void {
+  const properties = extractPropertyNames(objectLiteral);
 
   if (properties.size > 0) {
     trackedObjects.push({ objectName, properties });
   }
 
-  collectNestedObjectLiterals(initializer, objectName, trackedObjects);
+  collectNestedObjectLiterals(objectLiteral, objectName, trackedObjects);
+}
+
+function collectFactoryReturnAssignments(
+  sourceFile: ReturnType<Project["createSourceFile"]>,
+  trackedObjects: TrackedObject[],
+): void {
+  const returnLiterals = new Map<string, ObjectLiteralExpression>();
+
+  for (const fn of sourceFile.getFunctions()) {
+    const fnName = fn.getName();
+    if (!fnName) {
+      continue;
+    }
+
+    const returnLiteral = findReturnObjectLiteral(fn);
+    if (returnLiteral) {
+      returnLiterals.set(fnName, returnLiteral);
+    }
+  }
+
+  for (const declaration of sourceFile.getVariableDeclarations()) {
+    const initializer = declaration.getInitializer();
+    if (!initializer || !Node.isCallExpression(initializer)) {
+      continue;
+    }
+
+    const callee = initializer.getExpression();
+    if (!Node.isIdentifier(callee)) {
+      continue;
+    }
+
+    const returnLiteral = returnLiterals.get(callee.getText());
+    if (!returnLiteral) {
+      continue;
+    }
+
+    trackObjectLiteralByName(
+      declaration.getName(),
+      returnLiteral,
+      trackedObjects,
+    );
+  }
+}
+
+function findReturnObjectLiteral(
+  fn: FunctionDeclaration,
+): ObjectLiteralExpression | undefined {
+  const body = fn.getBody();
+  if (!body || !Node.isBlock(body)) {
+    return undefined;
+  }
+
+  for (const returnStatement of body.getDescendantsOfKind(
+    SyntaxKind.ReturnStatement,
+  )) {
+    const expression = returnStatement.getExpression();
+    if (expression && Node.isObjectLiteralExpression(expression)) {
+      return expression;
+    }
+  }
+
+  return undefined;
+}
+
+function collectClassInstanceAssignments(
+  sourceFile: ReturnType<Project["createSourceFile"]>,
+  trackedObjects: TrackedObject[],
+): void {
+  const classProperties = new Map<
+    string,
+    Map<string, { line: number; column: number }>
+  >();
+
+  for (const classDecl of sourceFile.getClasses()) {
+    const className = classDecl.getName();
+    if (!className) {
+      continue;
+    }
+
+    const properties = extractClassPropertyNames(classDecl);
+    if (properties.size > 0) {
+      classProperties.set(className, properties);
+    }
+  }
+
+  for (const declaration of sourceFile.getVariableDeclarations()) {
+    const initializer = declaration.getInitializer();
+    if (!initializer || !Node.isNewExpression(initializer)) {
+      continue;
+    }
+
+    const classExpression = initializer.getExpression();
+    if (!Node.isIdentifier(classExpression)) {
+      continue;
+    }
+
+    const properties = classProperties.get(classExpression.getText());
+    if (!properties) {
+      continue;
+    }
+
+    trackedObjects.push({
+      objectName: declaration.getName(),
+      properties,
+    });
+  }
+}
+
+function extractClassPropertyNames(
+  classDecl: ClassDeclaration,
+): Map<string, { line: number; column: number }> {
+  const properties = new Map<string, { line: number; column: number }>();
+
+  for (const member of classDecl.getMembers()) {
+    if (!Node.isPropertyDeclaration(member)) {
+      continue;
+    }
+
+    const nameNode = member.getNameNode();
+    if (!Node.isIdentifier(nameNode)) {
+      continue;
+    }
+
+    const { line, column } = nameNode
+      .getSourceFile()
+      .getLineAndColumnAtPos(nameNode.getStart());
+
+    properties.set(nameNode.getText(), { line, column });
+  }
+
+  return properties;
+}
+
+function collectInlineForLoopObjects(
+  sourceFile: ReturnType<Project["createSourceFile"]>,
+  trackedObjects: TrackedObject[],
+  iterationBindings: Map<string, string>,
+  forInBindings: ForInBinding[],
+): void {
+  for (const forOf of sourceFile.getDescendantsOfKind(
+    SyntaxKind.ForOfStatement,
+  )) {
+    const literal = findObjectLiteralInIterable(forOf.getExpression());
+    if (!literal) {
+      continue;
+    }
+
+    const objectName = createInlineObjectName(literal);
+    trackObjectLiteralByName(objectName, literal, trackedObjects);
+
+    const loopVariable = getLoopBindingName(forOf.getInitializer());
+    if (loopVariable) {
+      iterationBindings.set(loopVariable, objectName);
+    }
+  }
+
+  for (const forIn of sourceFile.getDescendantsOfKind(
+    SyntaxKind.ForInStatement,
+  )) {
+    const expression = forIn.getExpression();
+    if (!expression || !Node.isObjectLiteralExpression(expression)) {
+      continue;
+    }
+
+    const objectName = createInlineObjectName(expression);
+    trackObjectLiteralByName(objectName, expression, trackedObjects);
+
+    const loopVariable = getLoopBindingName(forIn.getInitializer());
+    if (loopVariable) {
+      forInBindings.push({ objectName, loopVariable });
+    }
+  }
+}
+
+function findObjectLiteralInIterable(
+  expression: Node | undefined,
+): ObjectLiteralExpression | undefined {
+  if (!expression) {
+    return undefined;
+  }
+
+  if (Node.isObjectLiteralExpression(expression)) {
+    return expression;
+  }
+
+  if (Node.isArrayLiteralExpression(expression)) {
+    for (const element of expression.getElements()) {
+      if (Node.isObjectLiteralExpression(element)) {
+        return element;
+      }
+    }
+  }
+
+  return undefined;
+}
+
+function getLoopBindingName(initializer: Node | undefined): string | undefined {
+  if (!initializer || !Node.isVariableDeclarationList(initializer)) {
+    return undefined;
+  }
+
+  const [declaration] = initializer.getDeclarations();
+  if (!declaration) {
+    return undefined;
+  }
+
+  const nameNode = declaration.getNameNode();
+  if (!Node.isIdentifier(nameNode)) {
+    return undefined;
+  }
+
+  return nameNode.getText();
+}
+
+function createInlineObjectName(
+  objectLiteral: ObjectLiteralExpression,
+): string {
+  const { line, column } = objectLiteral
+    .getSourceFile()
+    .getLineAndColumnAtPos(objectLiteral.getStart());
+
+  return `__inline:${line}:${column}`;
+}
+
+function collectParameterFlowReads(
+  sourceFile: ReturnType<Project["createSourceFile"]>,
+  trackedObjectName: string,
+  aliases: Map<string, string>,
+  iterationBindings: Map<string, string>,
+): Set<string> {
+  const readProperties = new Set<string>();
+
+  for (const call of sourceFile.getDescendantsOfKind(
+    SyntaxKind.CallExpression,
+  )) {
+    const callee = call.getExpression();
+    if (!Node.isIdentifier(callee)) {
+      continue;
+    }
+
+    const fn = sourceFile.getFunction(callee.getText());
+    if (!fn) {
+      continue;
+    }
+
+    const parameters = fn.getParameters();
+    const body = fn.getBody();
+    if (!body || parameters.length === 0) {
+      continue;
+    }
+
+    const args = call.getArguments();
+    for (
+      let index = 0;
+      index < args.length && index < parameters.length;
+      index++
+    ) {
+      const arg = args[index];
+      if (!arg || !Node.isIdentifier(arg)) {
+        continue;
+      }
+
+      if (resolveAlias(arg.getText(), aliases) !== trackedObjectName) {
+        continue;
+      }
+
+      const parameter = parameters[index];
+      if (!parameter) {
+        continue;
+      }
+
+      collectReadsOnBinding(
+        body,
+        parameter.getName(),
+        readProperties,
+        aliases,
+        iterationBindings,
+      );
+    }
+  }
+
+  return readProperties;
+}
+
+function collectReadsOnBinding(
+  scope: Node,
+  bindingName: string,
+  readProperties: Set<string>,
+  aliases: Map<string, string>,
+  iterationBindings: Map<string, string>,
+): void {
+  for (const access of scope.getDescendantsOfKind(
+    SyntaxKind.PropertyAccessExpression,
+  )) {
+    const expressionName = access.getExpression().getText();
+    if (
+      resolveObjectName(expressionName, aliases, iterationBindings) !==
+      bindingName
+    ) {
+      continue;
+    }
+
+    readProperties.add(access.getName());
+  }
+
+  for (const access of scope.getDescendantsOfKind(
+    SyntaxKind.ElementAccessExpression,
+  )) {
+    const expressionName = access.getExpression().getText();
+    if (
+      resolveObjectName(expressionName, aliases, iterationBindings) !==
+      bindingName
+    ) {
+      continue;
+    }
+
+    const argumentExpression = access.getArgumentExpression();
+    if (!argumentExpression) {
+      continue;
+    }
+
+    const propertyName = resolveComputedPropertyName(
+      argumentExpression,
+      new Map(),
+    );
+    if (propertyName) {
+      readProperties.add(propertyName);
+    }
+  }
+
+  for (const declaration of scope.getDescendantsOfKind(
+    SyntaxKind.VariableDeclaration,
+  )) {
+    const initializer = declaration.getInitializer();
+    if (!initializer || !Node.isIdentifier(initializer)) {
+      continue;
+    }
+
+    if (
+      resolveObjectName(initializer.getText(), aliases, iterationBindings) !==
+      bindingName
+    ) {
+      continue;
+    }
+
+    const nameNode = declaration.getNameNode();
+    if (!Node.isObjectBindingPattern(nameNode)) {
+      continue;
+    }
+
+    for (const element of nameNode.getElements()) {
+      const propertyName = getBindingElementPropertyName(element);
+      if (propertyName) {
+        readProperties.add(propertyName);
+      }
+    }
+  }
+}
+
+function collectForInEnumerationReads(
+  sourceFile: ReturnType<Project["createSourceFile"]>,
+  trackedObjectName: string,
+  forInBindings: ForInBinding[],
+  tracked: TrackedObject,
+): Set<string> {
+  const readProperties = new Set<string>();
+
+  for (const binding of forInBindings) {
+    if (binding.objectName !== trackedObjectName) {
+      continue;
+    }
+
+    if (!isBindingReferenced(sourceFile, binding.loopVariable)) {
+      continue;
+    }
+
+    for (const propertyName of tracked.properties.keys()) {
+      readProperties.add(propertyName);
+    }
+  }
+
+  return readProperties;
+}
+
+function isBindingReferenced(
+  sourceFile: ReturnType<Project["createSourceFile"]>,
+  bindingName: string,
+): boolean {
+  return sourceFile
+    .getDescendantsOfKind(SyntaxKind.Identifier)
+    .some((identifier) => {
+      if (identifier.getText() !== bindingName) {
+        return false;
+      }
+
+      const parent = identifier.getParent();
+      if (
+        Node.isVariableDeclaration(parent) &&
+        parent.getNameNode() === identifier
+      ) {
+        return false;
+      }
+
+      return true;
+    });
+}
+
+function resolveObjectName(
+  name: string,
+  aliases: Map<string, string>,
+  iterationBindings: Map<string, string>,
+): string {
+  const iterationTarget = iterationBindings.get(name);
+  if (iterationTarget) {
+    return iterationTarget;
+  }
+
+  return resolveAlias(name, aliases);
 }
 
 /**

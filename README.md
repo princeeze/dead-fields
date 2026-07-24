@@ -113,13 +113,7 @@ Each dead property includes `file`, `objectName`, `propertyName`, `line`, and `c
 
 ## Phase 1 scope
 
-Currently supports direct property access within a single file:
-
-```ts
-obj.foo // ✅ tracked
-```
-
-Not yet supported: destructuring, aliases, spreads, computed keys, optional chaining, JSX, cross-file analysis, and more.
+Single-file analysis for object literal and class instance properties, including aliases, destructuring, spreads, computed keys, optional chaining, JSX, and parameter flow.
 
 ## Development
 
