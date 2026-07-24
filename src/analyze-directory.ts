@@ -2,6 +2,10 @@ import { readdir, readFile } from "node:fs/promises";
 import { extname, join, relative } from "node:path";
 import picomatch from "picomatch";
 import { analyzeSource } from "./analyze.js";
+import {
+  collectCrossFileObjectReads,
+  deadPropertyKey,
+} from "./cross-file-exports.js";
 import type { AnalysisResult } from "./types.js";
 
 const SOURCE_EXTENSIONS = new Set([".ts", ".tsx"]);
@@ -48,15 +52,32 @@ export async function analyzeDirectory(
 
   files.sort();
 
-  const results = await Promise.all(
+  const sources = await Promise.all(
     files.map(async (absolutePath) => {
-      const source = await readFile(absolutePath, "utf8");
       const filePath = relative(dirPath, absolutePath);
-      return analyzeSource(source, { filePath });
+      const source = await readFile(absolutePath, "utf8");
+      return { filePath, source };
     }),
   );
 
+  const crossFileReads = collectCrossFileObjectReads(sources);
+
+  const results = sources.map(({ filePath, source }) =>
+    analyzeSource(source, { filePath }),
+  );
+
   return {
-    deadProperties: results.flatMap((result) => result.deadProperties),
+    deadProperties: results
+      .flatMap((result) => result.deadProperties)
+      .filter(
+        (deadProperty) =>
+          !crossFileReads.has(
+            deadPropertyKey(
+              deadProperty.file,
+              deadProperty.objectName,
+              deadProperty.propertyName,
+            ),
+          ),
+      ),
   };
 }
