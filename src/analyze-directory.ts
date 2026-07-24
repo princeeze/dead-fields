@@ -1,13 +1,23 @@
 import { readdir, readFile } from "node:fs/promises";
 import { extname, join, relative } from "node:path";
+import picomatch from "picomatch";
 import { analyzeSource } from "./analyze.js";
 import type { AnalysisResult } from "./types.js";
 
 const SOURCE_EXTENSIONS = new Set([".ts", ".tsx"]);
 
+export interface AnalyzeDirectoryOptions {
+  ignore?: string[];
+}
+
 export async function analyzeDirectory(
   dirPath: string,
+  options: AnalyzeDirectoryOptions = {},
 ): Promise<AnalysisResult> {
+  const shouldIgnore =
+    options.ignore && options.ignore.length > 0
+      ? picomatch(options.ignore, { dot: true })
+      : () => false;
   const files: string[] = [];
   const dirsToWalk = [dirPath];
 
@@ -17,13 +27,20 @@ export async function analyzeDirectory(
 
     for (const entry of entries) {
       const absolutePath = join(currentDir, entry.name);
+      const relativePath = relative(dirPath, absolutePath);
 
       if (entry.isDirectory()) {
-        dirsToWalk.push(absolutePath);
+        if (!shouldIgnore(relativePath)) {
+          dirsToWalk.push(absolutePath);
+        }
         continue;
       }
 
-      if (entry.isFile() && SOURCE_EXTENSIONS.has(extname(entry.name))) {
+      if (
+        entry.isFile() &&
+        SOURCE_EXTENSIONS.has(extname(entry.name)) &&
+        !shouldIgnore(relativePath)
+      ) {
         files.push(absolutePath);
       }
     }

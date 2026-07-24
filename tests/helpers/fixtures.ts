@@ -78,7 +78,7 @@ export function toFixtureExpected(result: AnalysisResult): FixtureExpected {
   };
 }
 
- function sortExpectedDeadProperties(
+function sortExpectedDeadProperties(
   deadProperties: ExpectedDeadProperty[],
 ): ExpectedDeadProperty[] {
   return [...deadProperties].sort((left, right) => {

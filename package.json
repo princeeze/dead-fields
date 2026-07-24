@@ -5,6 +5,9 @@
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "bin": {
+    "dead-fields": "./dist/cli.js"
+  },
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
@@ -12,10 +15,12 @@
     }
   },
   "files": [
-    "dist"
+    "dist",
+    "schema"
   ],
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && tsx scripts/generate-schema.ts",
+    "dead-fields": "pnpm build && node ./dist/cli.js",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:fixtures:update": "UPDATE_FIXTURES=1 vitest run tests/fixtures.test.ts"
@@ -29,12 +34,20 @@
   "devDependencies": {
     "@biomejs/biome": "2.5.5",
     "@types/node": "^26.1.1",
+    "@types/picomatch": "^4.0.3",
     "@types/react": "^19.2.17",
+    "execa": "^10.0.0",
+    "tsx": "^4.23.1",
     "typescript": "^7.0.2",
     "vitest": "^4.1.10"
   },
   "dependencies": {
+    "c12": "4.0.0-beta.5",
+    "citty": "^0.2.2",
     "fallow": "^3.9.1",
-    "ts-morph": "^28.0.0"
+    "picocolors": "^1.1.1",
+    "picomatch": "^4.0.5",
+    "ts-morph": "^28.0.0",
+    "zod": "^4.4.3"
   }
 }
