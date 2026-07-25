@@ -61,6 +61,7 @@ import {
   ts,
   type VariableDeclaration,
 } from "ts-morph";
+import { hasIgnoreObjectComment } from "./ignore-comments.js";
 import type { AnalysisResult, AnalyzeOptions, DeadProperty } from "./types.js";
 
 interface ForInBinding {
@@ -337,6 +338,14 @@ function trackObjectLiteralDeclaration(
   declaration: VariableDeclaration,
   trackedObjects: TrackedObject[],
 ): void {
+  const statement = declaration.getVariableStatement();
+  if (
+    hasIgnoreObjectComment(declaration) ||
+    (statement && hasIgnoreObjectComment(statement))
+  ) {
+    return;
+  }
+
   const initializer = declaration.getInitializer();
   if (!initializer || !Node.isObjectLiteralExpression(initializer)) {
     return;
