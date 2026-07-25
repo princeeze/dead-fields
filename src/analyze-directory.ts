@@ -6,6 +6,10 @@ import {
   collectCrossFileObjectReads,
   deadPropertyKey,
 } from "./cross-file-exports.js";
+import {
+  createPathAliasResolver,
+  findTsConfigPath,
+} from "./tsconfig-paths.js";
 import type { AnalysisResult } from "./types.js";
 
 const SOURCE_EXTENSIONS = new Set([".ts", ".tsx"]);
@@ -60,7 +64,14 @@ export async function analyzeDirectory(
     }),
   );
 
-  const crossFileReads = collectCrossFileObjectReads(sources);
+  const knownFiles = new Set(sources.map((entry) => entry.filePath));
+  const tsconfigPath = await findTsConfigPath(dirPath);
+  const pathAliasResolver = tsconfigPath
+    ? createPathAliasResolver(tsconfigPath, dirPath, knownFiles)
+    : undefined;
+  const crossFileReads = collectCrossFileObjectReads(sources, {
+    pathAliasResolver,
+  });
 
   const results = sources.map(({ filePath, source }) =>
     analyzeSource(source, { filePath }),

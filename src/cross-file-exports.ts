@@ -1,4 +1,3 @@
-import { dirname, join, normalize } from "node:path";
 import {
   Node,
   type ObjectLiteralExpression,
@@ -10,6 +9,10 @@ import {
   SyntaxKind,
   ts,
 } from "ts-morph";
+import {
+  type PathAliasResolver,
+  resolveImportPath,
+} from "./tsconfig-paths.js";
 
 interface SourceEntry {
   filePath: string;
@@ -28,6 +31,7 @@ interface ExportedObject {
  */
 export function collectCrossFileObjectReads(
   sources: SourceEntry[],
+  options: { pathAliasResolver?: PathAliasResolver } = {},
 ): Set<string> {
   if (sources.length < 2) {
     return new Set();
@@ -67,10 +71,11 @@ export function collectCrossFileObjectReads(
         continue;
       }
 
-      const resolvedPath = resolveRelativeImport(
+      const resolvedPath = resolveImportPath(
         entry.filePath,
         importDecl.getModuleSpecifierValue(),
         knownFiles,
+        options.pathAliasResolver,
       );
       if (!resolvedPath) {
         continue;
@@ -213,38 +218,6 @@ function getPropertyAssignmentName(
   }
 
   return undefined;
-}
-
-function resolveRelativeImport(
-  importerPath: string,
-  specifier: string,
-  knownFiles: Set<string>,
-): string | undefined {
-  if (!specifier.startsWith(".")) {
-    return undefined;
-  }
-
-  const resolvedBase = normalize(join(dirname(importerPath), specifier));
-  const candidates = [
-    resolvedBase,
-    `${resolvedBase}.ts`,
-    `${resolvedBase}.tsx`,
-    join(resolvedBase, "index.ts"),
-    join(resolvedBase, "index.tsx"),
-  ];
-
-  for (const candidate of candidates) {
-    if (knownFiles.has(candidate)) {
-      return candidate;
-    }
-  }
-
-  const matching = [...knownFiles].filter((filePath) => {
-    const withoutExtension = filePath.replace(/\.(tsx?)$/, "");
-    return withoutExtension === resolvedBase;
-  });
-
-  return matching[0];
 }
 
 function collectImportedBindingReads(
