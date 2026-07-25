@@ -105,7 +105,7 @@ function matchPathPattern(
   return specifier.slice(prefix.length, specifier.length - suffix.length);
 }
 
-export function resolveKnownFile(
+function resolveKnownFile(
   filePath: string,
   knownFiles: Set<string>,
 ): string | undefined {
@@ -132,7 +132,7 @@ export function resolveKnownFile(
   return matching[0];
 }
 
-export function resolveRelativeImport(
+function resolveRelativeImport(
   importerPath: string,
   specifier: string,
   knownFiles: Set<string>,

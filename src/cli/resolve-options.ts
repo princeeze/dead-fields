@@ -3,6 +3,7 @@ import {
   type DeadFieldsConfig,
   DeadFieldsConfigSchema,
 } from "../config/schema.js";
+import { CONFIG_BASENAME } from "../constants.js";
 import type { OutputFormat } from "./format.js";
 
 export interface CliFlags {
@@ -25,7 +26,7 @@ export async function resolveCliOptions(
   cwd = process.cwd(),
 ): Promise<ResolvedCliOptions> {
   const { config } = await loadConfig<DeadFieldsConfig>({
-    name: "dead-fields",
+    name: CONFIG_BASENAME,
     cwd,
     configFile: flags.config,
     packageJson: false,

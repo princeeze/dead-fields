@@ -1,5 +1,5 @@
 {
-  "name": "dead-fields",
+  "name": "@princeeze/dead-fields",
   "version": "0.2.2",
   "description": "Static analysis for detecting unread object literal properties in TypeScript",
   "type": "module",

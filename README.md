@@ -7,9 +7,9 @@ Unlike tools that find unused symbols, dead-fields analyzes **property usage** o
 ## Install
 
 ```bash
-pnpm add dead-fields
+pnpm add @princeeze/dead-fields
 # or
-npm install dead-fields
+npm install @princeeze/dead-fields
 ```
 
 ## CLI
@@ -59,7 +59,7 @@ Create `dead-fields.config.json` (or `dead-fields.config.ts`) in your project ro
 
 ```json
 {
-  "$schema": "./node_modules/dead-fields/schema/dead-fields.schema.json",
+  "$schema": "./node_modules/@princeeze/dead-fields/schema/dead-fields.schema.json",
   "source": "./src",
   "ignore": ["**/fixtures/**", "**/*.test.ts"]
 }
@@ -68,7 +68,7 @@ Create `dead-fields.config.json` (or `dead-fields.config.ts`) in your project ro
 TypeScript config files are supported too:
 
 ```ts
-import type { DeadFieldsConfig } from "dead-fields";
+import type { DeadFieldsConfig } from "@princeeze/dead-fields";
 
 export default {
   source: "./src",
@@ -86,7 +86,7 @@ Config fields:
 ## Programmatic API
 
 ```ts
-import { analyzeSource, analyzeFile, analyzeDirectory } from "dead-fields";
+import { analyzeSource, analyzeFile, analyzeDirectory } from "@princeeze/dead-fields";
 
 const result = analyzeSource(`
   const config = {

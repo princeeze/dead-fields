@@ -1,13 +1,14 @@
 import { access, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { DEFAULT_IGNORE_PATTERNS } from "../config/schema.js";
+import { CONFIG_BASENAME, PACKAGE_SCHEMA_PATH } from "../constants.js";
 
-export const DEFAULT_CONFIG_FILENAME = "dead-fields.config.json";
+export const DEFAULT_CONFIG_FILENAME = `${CONFIG_BASENAME}.config.json`;
 
 export function getDefaultConfigContent(): string {
   return `${JSON.stringify(
     {
-      $schema: "./node_modules/dead-fields/schema/dead-fields.schema.json",
+      $schema: PACKAGE_SCHEMA_PATH,
       source: "./src",
       ignore: [...DEFAULT_IGNORE_PATTERNS],
     },
@@ -16,7 +17,7 @@ export function getDefaultConfigContent(): string {
   )}\n`;
 }
 
-export async function createDefaultConfigFile(
+async function createDefaultConfigFile(
   cwd: string,
   options: { force?: boolean } = {},
 ): Promise<string> {
@@ -29,10 +30,7 @@ export async function createDefaultConfigFile(
         `${DEFAULT_CONFIG_FILENAME} already exists (use --force to overwrite)`,
       );
     } catch (error) {
-      if (
-        error instanceof Error &&
-        error.message.includes("already exists")
-      ) {
+      if (error instanceof Error && error.message.includes("already exists")) {
         throw error;
       }
     }

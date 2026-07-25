@@ -7,6 +7,7 @@ import {
   DEFAULT_CONFIG_FILENAME,
   getDefaultConfigContent,
 } from "../src/cli/init.js";
+import { PACKAGE_SCHEMA_PATH } from "../src/constants.js";
 
 const cliPath = join(import.meta.dirname, "..", "dist", "cli.js");
 const fixturePath = join(
@@ -81,7 +82,7 @@ describe("dead-fields CLI", () => {
     const content = await readFile(join(dir, DEFAULT_CONFIG_FILENAME), "utf8");
     expect(content).toBe(getDefaultConfigContent());
     expect(JSON.parse(content)).toEqual({
-      $schema: "./node_modules/dead-fields/schema/dead-fields.schema.json",
+      $schema: PACKAGE_SCHEMA_PATH,
       source: "./src",
       ignore: ["**/node_modules/**", "**/dist/**", "**/.git/**"],
     });

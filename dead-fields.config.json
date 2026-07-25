@@ -1,9 +1,0 @@
-{
-  "$schema": "./node_modules/dead-fields/schema/dead-fields.schema.json",
-  "source": "./src",
-  "ignore": [
-    "**/node_modules/**",
-    "**/dist/**",
-    "**/.git/**"
-  ]
-}

@@ -9,10 +9,7 @@ import {
   SyntaxKind,
   ts,
 } from "ts-morph";
-import {
-  type PathAliasResolver,
-  resolveImportPath,
-} from "./tsconfig-paths.js";
+import { type PathAliasResolver, resolveImportPath } from "./tsconfig-paths.js";
 
 interface SourceEntry {
   filePath: string;

@@ -1,6 +1,6 @@
 import type { Node } from "ts-morph";
 
-export const IGNORE_OBJECT_DIRECTIVE = "dead-fields-ignore-object";
+const IGNORE_OBJECT_DIRECTIVE = "dead-fields-ignore-object";
 
 export function hasIgnoreObjectComment(node: Node): boolean {
   for (const comment of node.getLeadingCommentRanges()) {

@@ -6,10 +6,7 @@ import {
   collectCrossFileObjectReads,
   deadPropertyKey,
 } from "./cross-file-exports.js";
-import {
-  createPathAliasResolver,
-  findTsConfigPath,
-} from "./tsconfig-paths.js";
+import { createPathAliasResolver, findTsConfigPath } from "./tsconfig-paths.js";
 import type { AnalysisResult } from "./types.js";
 
 const SOURCE_EXTENSIONS = new Set([".ts", ".tsx"]);
