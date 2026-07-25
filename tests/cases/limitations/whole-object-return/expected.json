@@ -1,0 +1,14 @@
+{
+  "deadProperties": [
+    {
+      "file": "index.ts",
+      "objectName": "definition",
+      "propertyName": "x"
+    },
+    {
+      "file": "index.ts",
+      "objectName": "definition",
+      "propertyName": "y"
+    }
+  ]
+}
