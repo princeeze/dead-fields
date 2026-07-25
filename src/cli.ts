@@ -7,6 +7,7 @@ import { defineCommand, runMain } from "citty";
 import { analyzeDirectory } from "./analyze-directory.js";
 import { analyzeFile } from "./analyze-file.js";
 import { formatResults } from "./cli/format.js";
+import { runInit } from "./cli/init.js";
 import { resolveCliOptions } from "./cli/resolve-options.js";
 
 const packageJsonPath = join(
@@ -23,7 +24,7 @@ const main = defineCommand({
     name: "dead-fields",
     version: packageJson.version,
     description:
-      "Detect object literal properties that are never read via dot notation",
+      "Detect object literal properties that are never read via dot notation. Run `dead-fields init` to create a config file.",
   },
   args: {
     path: {
@@ -53,7 +54,21 @@ const main = defineCommand({
       default: process.stdout.isTTY,
     },
   },
-  async run({ args }) {
+  async run(context) {
+    const { args, rawArgs } = context;
+
+    if (rawArgs[0] === "init") {
+      try {
+        await runInit(rawArgs.slice(1));
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : "Unknown error occurred";
+        process.stderr.write(`dead-fields: ${message}\n`);
+        process.exitCode = 1;
+      }
+      return;
+    }
+
     try {
       const options = await resolveCliOptions({
         path: args.path,

@@ -6,6 +6,8 @@ const DEFAULT_IGNORE_PATTERNS: readonly string[] = [
   "**/.git/**",
 ] as const;
 
+export { DEFAULT_IGNORE_PATTERNS };
+
 export const DeadFieldsConfigSchema = z.object({
   /** Directory or file to analyze. Defaults to "." */
   source: z.string().default("."),

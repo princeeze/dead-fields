@@ -1,6 +1,12 @@
+import { mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execa } from "execa";
 import { describe, expect, it } from "vitest";
+import {
+  DEFAULT_CONFIG_FILENAME,
+  getDefaultConfigContent,
+} from "../src/cli/init.js";
 
 const cliPath = join(import.meta.dirname, "..", "dist", "cli.js");
 const fixturePath = join(
@@ -17,6 +23,7 @@ describe("dead-fields CLI", () => {
 
     expect(stdout).toContain("dead-fields");
     expect(stdout).toContain("--ignore");
+    expect(stdout).toContain("init");
   });
 
   it("reports dead properties with exit code 1", async () => {
@@ -58,5 +65,53 @@ describe("dead-fields CLI", () => {
 
     expect(exitCode).toBe(1);
     expect(JSON.parse(stdout).deadProperties).toHaveLength(2);
+  });
+
+  it("creates a default config file with init", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "dead-fields-init-"));
+
+    const { stdout, exitCode } = await execa("node", [cliPath, "init"], {
+      cwd: dir,
+      reject: false,
+    });
+
+    expect(exitCode).toBe(0);
+    expect(stdout).toContain(`Created ${DEFAULT_CONFIG_FILENAME}`);
+
+    const content = await readFile(join(dir, DEFAULT_CONFIG_FILENAME), "utf8");
+    expect(content).toBe(getDefaultConfigContent());
+    expect(JSON.parse(content)).toEqual({
+      $schema: "./node_modules/dead-fields/schema/dead-fields.schema.json",
+      source: "./src",
+      ignore: ["**/node_modules/**", "**/dist/**", "**/.git/**"],
+    });
+  });
+
+  it("refuses to overwrite an existing config without --force", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "dead-fields-init-"));
+    await writeFile(join(dir, DEFAULT_CONFIG_FILENAME), "{}");
+
+    const { stderr, exitCode } = await execa("node", [cliPath, "init"], {
+      cwd: dir,
+      reject: false,
+    });
+
+    expect(exitCode).toBe(1);
+    expect(stderr).toContain("already exists");
+  });
+
+  it("overwrites an existing config with init --force", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "dead-fields-init-"));
+    await writeFile(join(dir, DEFAULT_CONFIG_FILENAME), "{}");
+
+    const { exitCode } = await execa("node", [cliPath, "init", "--force"], {
+      cwd: dir,
+      reject: false,
+    });
+
+    expect(exitCode).toBe(0);
+
+    const content = await readFile(join(dir, DEFAULT_CONFIG_FILENAME), "utf8");
+    expect(content).toBe(getDefaultConfigContent());
   });
 });
